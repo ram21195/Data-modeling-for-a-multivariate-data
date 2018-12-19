@@ -1,0 +1,312 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov 23 13:03:07 2018
+
+@author: vakka
+"""
+
+import pandas as pd
+import numpy as np
+
+#loading the data
+df= pd.read_csv("BMI555IEE520Fall2018train.csv")
+
+#Downsampling
+count_class_0, count_class_1 = df.y.value_counts()
+
+# Dividing by class
+df_class_0 = df[df['y'] == -1]
+df_class_1 = df[df['y'] == 1]    
+
+df_class_0_undrsamp = df_class_0.sample(count_class_1)
+df_test_undrsamp = pd.concat([df_class_0_undrsamp, df_class_1], axis=0)
+
+#Visualizing the size of the samples
+print('Random under-sampling:')
+print(df_test_undrsamp.y.value_counts())
+
+df_test_undrsamp.y.value_counts().plot(kind='bar', title='Count (target)');
+
+#Oversampling
+count_class_0, count_class_1 = df.y.value_counts()
+
+# Dividing by class
+df_class_0 = df[df['y'] == -1]
+df_class_1 = df[df['y'] == 1]  
+
+df_class_1_over = df_class_1.sample(count_class_0, replace=True)
+df_test_ovrsamp = pd.concat([df_class_0, df_class_1_over], axis=0)
+
+print('Random over-sampling:')
+print(df_test_ovrsamp.y.value_counts())
+
+df_test_ovrsamp.y.value_counts().plot(kind='bar', title='Count (target)');
+
+#Determining x and y for undersampling
+x = df_test_undrsamp.iloc[:, 1:67].values
+y = df_test_undrsamp.iloc[:, 67].values
+
+#Determining x and y for oversampling
+x = df_test_ovrsamp.iloc[:, 1:67].values
+y = df_test_ovrsamp.iloc[:, 67].values
+
+#Unbalanced
+#Determining x and y
+x = df.iloc[:, 1:67].values
+y = df.iloc[:, 67].values
+
+#label encoding(categorical to numerical)
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+labelencoder_x = LabelEncoder()
+
+x[:, 12] = labelencoder_x.fit_transform(x[:, 12].astype(str))
+x[:, 4] = labelencoder_x.fit_transform(x[:, 4].astype(str))
+x[:, 63] = labelencoder_x.fit_transform(x[:, 63].astype(str))
+x[:, 64] = labelencoder_x.fit_transform(x[:, 64].astype(str))
+
+
+#Onehotencoding(dummy variables)
+onehotencoder = OneHotEncoder(categorical_features = [4])
+x = onehotencoder.fit_transform(x).toarray() 
+
+x = x[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [15])
+x = onehotencoder.fit_transform(x).toarray() 
+
+x = x[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [67])
+x = onehotencoder.fit_transform(x).toarray() 
+
+x = x[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [70])
+x = onehotencoder.fit_transform(x).toarray()
+
+x = x[:, 1:]
+
+#feature scaling
+from sklearn.preprocessing import StandardScaler
+sc = StandardScaler()
+x = sc.fit_transform(x)
+
+#PCA for all variables
+from sklearn.decomposition import PCA
+pca = PCA(n_components=None)
+x=pca.fit_transform(x)
+exp_var = pca.explained_variance_ratio_
+import matplotlib.pyplot as plt
+var1=np.cumsum(np.round(pca.explained_variance_ratio_, decimals=4)*100)
+plt.plot(var1)
+
+#PCA
+from sklearn.decomposition import PCA
+pca = PCA(n_components=60)
+x=pca.fit_transform(x)
+exp_var = pca.explained_variance_ratio_
+
+#Model building for undersampling
+#GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+
+parameters = {'n_estimators':[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'criterion': ('gini', 'entropy'), 'max_features': ('auto', 'sqrt', 'log2'),
+            'max_depth': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+random_forest_undrsamp = RandomForestClassifier(class_weight="balanced", random_state= 123)
+clf_random_forest_undrsamp = GridSearchCV(random_forest_undrsamp, parameters, scoring = 'f1_micro')
+
+#train-test-split
+from sklearn import model_selection
+actuals=[]
+probs=[]
+hats=[]
+from sklearn.model_selection import KFold
+kfold = model_selection.KFold(n_splits=5, shuffle=True, random_state=123)
+for train, test in kfold.split(x, y):
+    #print('train: %s, test: %s' % (train, test))
+   # Train classifier on training data, predict test data
+   x_train= x[train] 
+   x_test = x[test] 
+  
+   clf_random_forest_undrsamp.fit(x[train], y[train])
+   foldhats = clf_random_forest_undrsamp.predict(x[test])
+   foldprobs = clf_random_forest_undrsamp.predict_proba(x[test])[:,1] # Class probability estimates for ROC curve
+   actuals = np.append(actuals, y[test]) #Combine targets, then probs, and then predictions from each fold
+   probs = np.append(probs, foldprobs)
+   hats = np.append(hats, foldhats)
+
+
+from sklearn.metrics import confusion_matrix, accuracy_score
+cmundrsamp = confusion_matrix(actuals, hats) 
+accundrsamp = accuracy_score(actuals,hats)
+
+print('The best parameters for undrsamp are: ' + str(clf_random_forest_undrsamp.best_params_))
+print('The best score for undrsamp is: '+ str(clf_random_forest_undrsamp.best_score_))
+
+
+#Model building for oversampling
+#GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+
+parameters = {'n_estimators':[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'criterion': ('gini', 'entropy'), 'max_features': ('auto', 'sqrt', 'log2'),
+            'max_depth': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+random_forest_ovrsamp = RandomForestClassifier(class_weight="balanced", random_state=123)
+clf_random_forest_ovrsamp = GridSearchCV(random_forest_ovrsamp, parameters, scoring = 'f1_micro')
+
+#train-test-split
+from sklearn import model_selection
+actuals=[]
+probs=[]
+hats=[]
+from sklearn.model_selection import KFold
+kfold = model_selection.KFold(n_splits=5, shuffle=True, random_state=0)
+for train, test in kfold.split(x, y):
+    #print('train: %s, test: %s' % (train, test))
+   # Train classifier on training data, predict test data
+   x_train= x[train] 
+   x_test = x[test] 
+  
+   clf_random_forest_ovrsamp.fit(x[train], y[train])
+   foldhats = clf_random_forest_ovrsamp.predict(x[test])
+   foldprobs = clf_random_forest_ovrsamp.predict_proba(x[test])[:,1] # Class probability estimates for ROC curve
+   actuals = np.append(actuals, y[test]) #Combine targets, then probs, and then predictions from each fold
+   probs = np.append(probs, foldprobs)
+   hats = np.append(hats, foldhats)
+
+
+from sklearn.metrics import confusion_matrix, accuracy_score
+cmovrsamp = confusion_matrix(actuals, hats) 
+accovrrsamp = accuracy_score(actuals,hats)
+
+print('The best parameters for ovrsamp are: ' + str(clf_random_forest_ovrsamp.best_params_))
+print('The best score for ovrsamp is: '+ str(clf_random_forest_ovrsamp.best_score_))
+
+
+
+#Model building for the unbalanced data
+#GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+
+parameters = {'n_estimators':[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'criterion': ('gini', 'entropy'), 'max_features': ('auto', 'sqrt', 'log2'),
+            'max_depth': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+random_forest_unbal = RandomForestClassifier(class_weight= None, random_state=123)
+clf_random_forest_unbal = GridSearchCV(random_forest_unbal, parameters, scoring = 'f1_micro')
+
+#train-test-split
+from sklearn import model_selection
+actuals=[]
+probs=[]
+hats=[]
+from sklearn.model_selection import KFold
+kfold = model_selection.KFold(n_splits=5, shuffle=True, random_state=0)
+for train, test in kfold.split(x, y):
+    #print('train: %s, test: %s' % (train, test))
+   # Train classifier on training data, predict test data
+   x_train=x[train] 
+   x_test = x[test] 
+  
+   clf_random_forest_unbal.fit(x[train], y[train])
+   foldhats = clf_random_forest_unbal.predict(x[test])
+   foldprobs = clf_random_forest_unbal.predict_proba(x[test])[:,1] # Class probability estimates for ROC curve
+   actuals = np.append(actuals, y[test]) #Combine targets, then probs, and then predictions from each fold
+   probs = np.append(probs, foldprobs)
+   hats = np.append(hats, foldhats)
+
+
+from sklearn.metrics import confusion_matrix, accuracy_score
+cmunbal = confusion_matrix(actuals, hats) 
+accunbal = accuracy_score(actuals,hats)
+
+print('The best parameters for unbal are: ' + str(clf_random_forest_unbal.best_params_))
+print('The best score for unbal is: '+ str(clf_random_forest_unbal.best_score_))
+
+#Model building for the unbalanced data (No PCA)
+#GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+
+parameters = {'n_estimators':[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'criterion': ('gini', 'entropy'), 'max_features': ('auto', 'sqrt', 'log2'),
+            'max_depth': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+random_forest_unbalnp = RandomForestClassifier(class_weight= None, random_state=123)
+clf_random_forest_unbalnp = GridSearchCV(random_forest_unbalnp, parameters, scoring = 'f1_micro')
+
+#train-test-split
+from sklearn import model_selection
+actuals=[]
+probs=[]
+hats=[]
+from sklearn.model_selection import KFold
+kfold = model_selection.KFold(n_splits=5, shuffle=True, random_state=0)
+for train, test in kfold.split(x, y):
+    #print('train: %s, test: %s' % (train, test))
+   # Train classifier on training data, predict test data
+   x_train= x[train] 
+   x_test = x[test] 
+  
+   clf_random_forest_unbalnp.fit(x[train], y[train])
+   foldhats = clf_random_forest_unbalnp.predict(x[test])
+   foldprobs = clf_random_forest_unbalnp.predict_proba(x[test])[:,1] # Class probability estimates for ROC curve
+   actuals = np.append(actuals, y[test]) #Combine targets, then probs, and then predictions from each fold
+   probs = np.append(probs, foldprobs)
+   hats = np.append(hats, foldhats)
+
+
+from sklearn.metrics import confusion_matrix, accuracy_score
+cmunbalnp = confusion_matrix(actuals, hats) 
+accunbalnp = accuracy_score(actuals,hats)
+
+print('The best parameters for unbalnp are: ' + str(clf_random_forest_unbalnp.best_params_))
+print('The best score for unbalnp is: '+ str(clf_random_forest_unbalnp.best_score_))
+
+#Finding the targets for the test data
+#loading the data
+dftest= pd.read_csv("BMI555IEE520Fall2018test.csv")
+
+xtest = dftest.iloc[:, 1:67].values
+
+#label encoding(categorical to numerical)
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+labelencoder_xtest = LabelEncoder()
+
+xtest[:, 12] = labelencoder_xtest.fit_transform(xtest[:, 12].astype(str))
+xtest[:, 4] = labelencoder_xtest.fit_transform(xtest[:, 4].astype(str))
+xtest[:, 63] = labelencoder_xtest.fit_transform(xtest[:, 63].astype(str))
+xtest[:, 64] = labelencoder_xtest.fit_transform(xtest[:, 64].astype(str))
+
+
+#Onehotencoding(dummy variables)
+onehotencoder = OneHotEncoder(categorical_features = [4])
+xtest = onehotencoder.fit_transform(xtest).toarray() 
+
+xtest = xtest[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [13])
+xtest = onehotencoder.fit_transform(xtest).toarray() 
+
+xtest = xtest[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [65])
+xtest = onehotencoder.fit_transform(xtest).toarray() 
+
+xtest = xtest[:, 1:]
+
+onehotencoder = OneHotEncoder(categorical_features = [66])
+xtest = onehotencoder.fit_transform(xtest).toarray()
+
+xtest = xtest[:, 1:]
+
+#feature scaling
+from sklearn.preprocessing import StandardScaler
+sc = StandardScaler()
+xtest = sc.fit_transform(xtest)
+
+#PCA
+from sklearn.decomposition import PCA
+pca = PCA(n_components=60)
+xtest=pca.fit_transform(xtest)
+exp_var = pca.explained_variance_ratio_
+
+ypred= clf_random_forest_ovrsamp.predict(xtest)
